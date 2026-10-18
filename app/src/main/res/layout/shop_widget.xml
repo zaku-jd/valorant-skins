@@ -1,0 +1,10 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:gravity="center_vertical" android:padding="6dp" android:background="@drawable/widget_background">
+    <ImageView android:id="@+id/weapon1" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:layout_margin="2dp" android:scaleType="fitCenter" android:contentDescription="Shop skin 1" />
+    <ImageView android:id="@+id/weapon2" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:layout_margin="2dp" android:scaleType="fitCenter" android:contentDescription="Shop skin 2" />
+    <ImageView android:id="@+id/weapon3" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:layout_margin="2dp" android:scaleType="fitCenter" android:contentDescription="Shop skin 3" />
+    <ImageView android:id="@+id/weapon4" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:layout_margin="2dp" android:scaleType="fitCenter" android:contentDescription="Shop skin 4" />
+    <LinearLayout android:layout_width="40dp" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center">
+        <ImageButton android:id="@+id/widget_refresh" android:layout_width="36dp" android:layout_height="36dp" android:background="@drawable/widget_button" android:padding="8dp" android:src="@drawable/ic_refresh" android:contentDescription="Refresh today’s shop" />
+        <TextView android:id="@+id/widget_date" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="9sp" android:textColor="#CAC4D0" android:gravity="center" android:maxLines="1" android:text="—" />
+    </LinearLayout>
+</LinearLayout>

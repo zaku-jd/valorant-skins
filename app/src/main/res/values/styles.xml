@@ -1,0 +1,19 @@
+<resources>
+    <style name="AppTheme" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#D0BCFF</item>
+        <item name="colorOnPrimary">#381E72</item>
+        <item name="colorPrimaryContainer">#4F378B</item>
+        <item name="colorOnPrimaryContainer">#EADDFF</item>
+        <item name="colorSecondary">#CCC2DC</item>
+        <item name="colorSurface">#141218</item>
+        <item name="colorOnSurface">#E6E0E9</item>
+        <item name="android:colorBackground">#141218</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#141218</item>
+        <item name="android:navigationBarColor">#141218</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+    <string name="app_name">Skins</string>
+    <string name="widget_description">Today’s four shop skins. Tap refresh to fetch your rotation.</string>
+</resources>

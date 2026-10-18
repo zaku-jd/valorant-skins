@@ -1,0 +1,7 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="320dp" android:minHeight="48dp"
+    android:minResizeWidth="110dp" android:minResizeHeight="48dp" android:maxResizeHeight="96dp"
+    android:targetCellWidth="5" android:targetCellHeight="1"
+    android:resizeMode="horizontal" android:widgetCategory="home_screen"
+    android:updatePeriodMillis="0" android:initialLayout="@layout/shop_widget"
+    android:previewLayout="@layout/shop_widget" android:description="@string/widget_description" />
