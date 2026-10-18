@@ -4,6 +4,8 @@ Three swipeable pages: **All Skins → Shop → Starred**. Shop opens by default
 
 ## Install
 
+[Download the Android APK (v0.2.1)](https://github.com/zaku-jd/valorant-skins/releases/download/v0.2.1/Skins-0.2.1.apk).
+
 Transfer `Skins-0.2.1.apk` to your phone and open it. Allow installation from the app opening the APK if Android requests it. It uses the same package and signing certificate as the earlier personal build, so it can install as an update and preserve the session. The launcher name is now **Skins**.
 
 ## Catalogue and stars
