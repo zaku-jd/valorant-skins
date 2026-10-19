@@ -11,3 +11,5 @@ Category font: Barlow Condensed Bold, Google Fonts, SIL Open Font License. The c
 Material icons: Google Material Design Icons, Apache License 2.0: https://github.com/google/material-design-icons/blob/master/LICENSE .
 
 Material Components for Android, AndroidX, Gradle and their dependencies retain their respective open-source licenses. Dependency versions are declared in the Gradle project. Material Components and AndroidX use Apache License 2.0. Kotlin uses Apache License 2.0. https://github.com/material-components/material-components-android/blob/master/LICENSE
+
+Weapon-filter ordering: MetaBot overall competitive weapon pick-rate snapshot, all ranks/regions, dated 18 October 2026 and retrieved 19 October 2026: https://metabot.gg/en/valorant/weapons/pick-rate . These are the provider's nonadditive pick-rate percentages, not shares of all weapon use or personal account statistics. The bundled snapshot does not update at runtime. Melee has no comparable reported rate and is placed last.

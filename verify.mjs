@@ -14,8 +14,10 @@ const files=new Set(Object.values(index));let bytes=0;
 for(const name of files){const data=fs.readFileSync(new URL(name,asset));assert.equal(data.subarray(0,4).toString(),'RIFF');assert.equal(data.subarray(8,12).toString(),'WEBP');bytes+=data.length;}
 const reaver=weapons.find(w=>w.displayName==='Operator').skins.find(s=>s.displayName==='Reaver Operator');assert.equal(info[reaver.levels[0].uuid.replaceAll('-','')].collection,'Reaver');
 const source=fs.readFileSync(new URL('app/src/main/java/app/quietshop/MainActivity.java',base),'utf8');
-for(const category of categories)assert(source.includes(`"${category}"`));
-assert(source.includes('"All Skins","Shop","Starred"'));assert(source.includes('state==null?1:'));assert(!source.includes('Download gallery')&&!source.includes('Update catalogue')&&!source.includes('QuietShop'));
-const manifest=fs.readFileSync(new URL('app/src/main/AndroidManifest.xml',base),'utf8');assert(!/POST_NOTIFICATIONS|RECEIVE_BOOT_COMPLETED/.test(manifest));assert(manifest.includes('android:allowBackup="false"'));
+const rates=read('weapon-usage.json').rates;for(const w of weapons)assert(typeof rates[w.displayName]==='number'&&rates[w.displayName]>=0&&rates[w.displayName]<=100);
+assert(/"All Skins"\s*,\s*"Shop"\s*,\s*"Starred"\s*,\s*"Settings"/.test(source));assert(/getIntExtra\("page",\s*1\)/.test(source));assert(!source.includes('Download gallery')&&!source.includes('Update catalogue')&&!source.includes('QuietShop'));
+assert(/getBoolean\("hidePass",\s*true\)/.test(source));assert(!source.includes('categoryLabel('));
+const manifest=fs.readFileSync(new URL('app/src/main/AndroidManifest.xml',base),'utf8');assert(/POST_NOTIFICATIONS/.test(manifest));assert(manifest.includes('android:allowBackup="false"'));
+const daily=fs.readFileSync(new URL('app/src/main/java/app/quietshop/Daily.java',base),'utf8');assert(daily.includes('IMPORTANCE_LOW'));assert(/setSound\(null,\s*null\)/.test(daily));assert(!daily.includes('setPeriodic('));
 const widget=fs.readFileSync(new URL('app/src/main/res/xml/shop_widget.xml',base),'utf8');assert(widget.includes('android:updatePeriodMillis="0"'));assert(widget.includes('android:targetCellWidth="5"'));assert(widget.includes('android:targetCellHeight="1"'));
-console.log(`Verified ${count} skins, ${variants} variant entries, ${required.size} packed image references, ${files.size} unique WebP assets (${(bytes/1e6).toFixed(1)} MB). Category, navigation and widget checks passed.`);
+console.log(`Verified ${count} skins, ${variants} variant entries, ${required.size} packed image references, ${files.size} unique WebP assets (${(bytes/1e6).toFixed(1)} MB). Weapon usage, four-page navigation, battle-pass default, quiet reminder and widget checks passed.`);

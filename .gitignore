@@ -11,3 +11,7 @@ local.properties
 *.aab
 *.iml
 .idea/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
