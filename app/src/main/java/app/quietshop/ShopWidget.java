@@ -70,7 +70,7 @@ public class ShopWidget extends AppWidgetProvider {
 
   static void render(Context c, AppWidgetManager manager, int widget) {
     RemoteViews views = new RemoteViews(c.getPackageName(), R.layout.shop_widget);
-    JSONObject shop = Store.shop(c);
+    JSONObject shop = Store.cached(c, "shop_" + Accounts.main(c) + ".json");
     long checked = shop.optLong("checkedAt");
     JSONObject panel = shop.optJSONObject("SkinsPanelLayout");
     long end =
@@ -86,7 +86,7 @@ public class ShopWidget extends AppWidgetProvider {
         PendingIntent.getActivity(
             c,
             0,
-            new Intent(c, MainActivity.class),
+            new Intent(c, MainActivity.class).putExtra("account", Accounts.main(c)),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     for (int i = 0; i < 4; i++) {
       JSONObject s = !expired && i < offers.size() ? cat.skins.get(offers.get(i)) : null;

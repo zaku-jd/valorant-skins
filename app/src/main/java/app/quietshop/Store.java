@@ -15,7 +15,7 @@ final class Store {
   static final String API = "https://valorant-api.com/v1/";
   static final String CALLBACK = "https://playvalorant.com/opt_in";
   static final String AUTH = "https://auth.riotgames.com";
-  static final String VP = "85ad13f7-3d1b-5128-9eb2-7cd8a2d5b362";
+  static final String VP = "85ad13f7-3d1b-5128-9eb2-7cd8ee0b5741";
 
   static SharedPreferences prefs(Context c) {
     return c.getSharedPreferences("settings", 0);
@@ -194,7 +194,9 @@ final class Store {
         SkinLogic.expiresAt(
             old.optLong("checkedAt"),
             panel == null ? 0 : panel.optLong("SingleItemOffersRemainingDurationInSeconds"));
-    if (!force && SkinLogic.current(old.optLong("checkedAt"), end, System.currentTimeMillis())) {
+    if (!force
+        && old.optInt("schema") >= 4
+        && SkinLogic.current(old.optLong("checkedAt"), end, System.currentTimeMillis())) {
       History.record(c, id, old);
       JSONObject account = Accounts.get(c, id);
       if (!account.optBoolean("expired")) {
@@ -257,11 +259,14 @@ final class Store {
     JSONObject panel = raw.optJSONObject("SkinsPanelLayout");
     if (panel == null) throw new IOException("Riot returned an unfamiliar shop format.");
     long now = System.currentTimeMillis();
-    JSONObject shop = new JSONObject().put("SkinsPanelLayout", panel).put("checkedAt", now);
+    JSONObject shop =
+        new JSONObject().put("SkinsPanelLayout", panel).put("checkedAt", now).put("schema", 4);
+    if (raw.optJSONObject("AccessoryStore") != null)
+      shop.put("AccessoryStore", raw.getJSONObject("AccessoryStore"));
     cache(c, "shop_" + id + ".json", shop);
     History.record(c, id, shop);
     JSONObject prices = cached(c, "prices.json");
-    if (now - prices.optLong("updatedAt") > 7L * 86400000L)
+    if (prices.optInt("schema") < 4 || now - prices.optLong("updatedAt") > 7L * 86400000L)
       try {
         JSONArray all =
             request(base + "/store/v1/offers/", "GET", headers, null).data.getJSONArray("Offers");
@@ -269,41 +274,105 @@ final class Store {
           JSONObject o = all.getJSONObject(i), cost = o.optJSONObject("Cost");
           if (cost != null && cost.has(VP)) prices.put(o.getString("OfferID"), cost.getInt(VP));
         }
-        prices.put("updatedAt", now);
+        prices.put("updatedAt", now).put("schema", 4);
       } catch (Exception ignored) {
       }
     JSONArray daily = panel.optJSONArray("SingleItemStoreOffers");
     if (daily != null)
       for (int i = 0; i < daily.length(); i++) {
-        JSONObject o = daily.getJSONObject(i), cost = o.optJSONObject("Cost");
+        JSONObject o = CosmeticModel.offer(daily.getJSONObject(i)), cost = o.optJSONObject("Cost");
         if (cost != null && cost.has(VP)) prices.put(o.getString("OfferID"), cost.getInt(VP));
       }
     cache(c, "prices.json", prices);
     Catalogue.get(c).prices = prices;
-    if (now - s.optLong("ownedAt") > 86400000L)
+    JSONObject ownedCache = cached(c, "owned_" + id + ".json");
+    if (ownedCache.optInt("schema") < 4 || now - ownedCache.optLong("synced") > 86400000L) {
+      JSONObject byType = ownedCache.optJSONObject("byType");
+      if (byType == null) byType = new JSONObject();
+      boolean complete = true;
+      for (String type :
+          new String[] {
+            "e7c63390-eda7-46e0-bb7a-a6abdacd2433",
+            "dd3bf334-87f3-40bd-b043-682a57a8dc3a",
+            "3f296c07-64c3-494c-923b-fe692a4fa1bd",
+            "d5f120f8-ff8c-4aac-92ea-f2b5acbe9475",
+            "de7caa6b-adf7-4588-bbd1-143831e786c6"
+          }) {
+        try {
+          JSONObject owned =
+              request(base + "/store/v1/entitlements/" + id + "/" + type, "GET", headers, null)
+                  .data;
+          Set<String> ids = new HashSet<>();
+          JSONArray groups = owned.optJSONArray("EntitlementsByTypes");
+          if (groups == null && owned.optJSONArray("Entitlements") == null)
+            throw new IOException("Unknown ownership response");
+          if (groups != null)
+            for (int g = 0; g < groups.length(); g++)
+              addOwned(ids, groups.getJSONObject(g).optJSONArray("Entitlements"));
+          else addOwned(ids, owned.optJSONArray("Entitlements"));
+          byType.put(type, new JSONArray(ids));
+        } catch (Exception ignored) {
+          complete = false;
+        }
+      }
+      Set<String> ids = new HashSet<>();
+      for (Iterator<String> it = byType.keys(); it.hasNext(); ) {
+        JSONArray a = byType.getJSONArray(it.next());
+        for (int i = 0; i < a.length(); i++) ids.add(a.getString(i));
+      }
+      if (!complete) {
+        JSONArray oldIds = ownedCache.optJSONArray("ids");
+        for (int i = 0; oldIds != null && i < oldIds.length(); i++) ids.add(oldIds.getString(i));
+      }
+      cache(
+          c,
+          "owned_" + id + ".json",
+          new JSONObject()
+              .put("byType", byType)
+              .put("ids", new JSONArray(ids))
+              .put("synced", now)
+              .put("schema", 4)
+              .put("complete", complete));
+    }
+    JSONObject profile = cached(c, "profile_" + id + ".json");
+    if (now - profile.optLong("synced") > 86400000L) {
+      boolean complete = true;
       try {
-        JSONObject owned =
+        JSONObject identity =
             request(
-                    base + "/store/v1/entitlements/" + id + "/e7c63390-eda7-46e0-bb7a-a6abdacd2433",
+                    base + "/personalization/v3/players/" + id + "/playerloadout",
                     "GET",
                     headers,
                     null)
-                .data;
-        Set<String> ids = new HashSet<>();
-        JSONArray groups = owned.optJSONArray("EntitlementsByTypes");
-        if (groups == null && owned.optJSONArray("Entitlements") == null)
-          throw new IOException("Unknown ownership response");
-        if (groups != null)
-          for (int g = 0; g < groups.length(); g++)
-            addOwned(ids, groups.getJSONObject(g).optJSONArray("Entitlements"));
-        else addOwned(ids, owned.optJSONArray("Entitlements"));
-        cache(
-            c,
-            "owned_" + id + ".json",
-            new JSONObject().put("ids", new JSONArray(ids)).put("synced", now));
-        s.put("ownedAt", now);
+                .data
+                .getJSONObject("Identity");
+        profile
+            .put("card", identity.optString("PlayerCardID"))
+            .put("level", identity.optInt("AccountLevel"));
+      } catch (Exception ignored) {
+        complete = false;
+      }
+      try {
+        JSONObject progress =
+            request(base + "/account-xp/v1/players/" + id, "GET", headers, null)
+                .data
+                .getJSONObject("Progress");
+        if (progress.optInt("Level") > 0) profile.put("level", progress.optInt("Level"));
       } catch (Exception ignored) {
       }
+      try {
+        Catalogue cat = Catalogue.get(c);
+        JSONObject mmr = request(base + "/mmr/v1/players/" + id, "GET", headers, null).data;
+        JSONObject ranks = ProfileData.ranks(mmr, cat.currentSeason(now), cat::rank);
+        profile.put("ranks", ranks);
+      } catch (Exception ignored) {
+        complete = false;
+      }
+      profile.put("checkedAt", now).put("complete", complete);
+      // Retry unavailable optional profile fields on a later manual/rotation refresh.
+      if (complete) profile.put("synced", now);
+      cache(c, "profile_" + id + ".json", profile);
+    }
     if (s.optString("name").isEmpty())
       try {
         JSONArray names =
@@ -391,7 +460,7 @@ final class Store {
       JSONArray detailed = panel.optJSONArray("SingleItemStoreOffers");
       if (detailed != null)
         for (int i = 0; i < detailed.length(); i++)
-          out.add(detailed.optJSONObject(i).optString("OfferID"));
+          out.add(CosmeticModel.offer(detailed.optJSONObject(i)).optString("OfferID"));
     }
     out.remove("");
     return out;

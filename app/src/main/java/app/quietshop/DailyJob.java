@@ -20,9 +20,12 @@ public class DailyJob extends JobService {
                     || !Store.prefs(this).getBoolean("daily", true)) return;
                 if (a.optLong("nextAttempt") > System.currentTimeMillis()) continue;
                 try {
-                  Store.refresh(this, a.getString("id"), false);
+                  String id = a.getString("id");
+                  JSONObject before = Store.cached(this, "shop_" + id + ".json");
+                  JSONObject after = Store.refresh(this, id, false);
+                  Daily.success(this, id, before, after);
                 } catch (Exception e) {
-                  Daily.failure(this, a, e);
+                  if (Daily.online(this)) Daily.failure(this, a, e);
                 }
               }
               ShopWidget.updateAll(this);

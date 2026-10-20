@@ -70,7 +70,20 @@ final class Accounts {
 
   static synchronized void select(Context c, String id) throws Exception {
     get(c, id);
-    Store.prefs(c).edit().putString("active", id).remove("widgetState").apply();
+    Store.prefs(c).edit().putString("active", id).apply();
+  }
+
+  static synchronized String main(Context c) {
+    String id = Store.prefs(c).getString("mainAccount", "");
+    for (JSONObject a : list(c)) if (id.equals(a.optString("id"))) return id;
+    id = active(c);
+    Store.prefs(c).edit().putString("mainAccount", id).apply();
+    return id;
+  }
+
+  static synchronized void setMain(Context c, String id) throws Exception {
+    get(c, id);
+    Store.prefs(c).edit().putString("mainAccount", id).remove("widgetState").apply();
   }
 
   static synchronized void remove(Context c, String id) throws Exception {

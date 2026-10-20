@@ -2,13 +2,13 @@
 
 An Android app for browsing VALORANT skins and checking your daily shop.
 
-- All Skins: offline images and variants, weapon/skin-line/rarity filters, search, prices and wiki links. Weapon filters use a bundled overall player pick-rate snapshot.
-- Shop: your current offers, reset countdown and saved daily history for each account.
+- All Skins: switch between gun skins and accessories, with offline images, filters, exact known prices and wiki links. Weapon filters use a bundled overall player pick-rate snapshot.
+- Shop: the selected account's daily skins, weekly accessory offers, reset countdown and saved daily history.
 - Starred: saved skins, observed appearances and estimated chances/average waits. Estimates assume a uniform four-item rotation; Riot's actual odds can differ.
-- Settings: add Riot accounts, switch between saved sessions, sign out, and control daily refresh and quiet account reminders.
-- A 5×1 home-screen widget shows the active account's four offers and a refresh button.
+- Settings: account cards with player-card art, level, current/peak rank and owned items. Tap an account to view its shop; mark one MAIN for the widget. Saved sessions stay signed in while Riot permits it.
+- A 5×1 home-screen widget shows the MAIN account's four offers and a refresh button.
 
-The catalogue and images are bundled with the app. Shop access uses Riot's client-facing endpoints. History records successfully fetched rotations; missed days cannot be recovered. Android may delay background refresh. Saved sessions can renew while Riot permits it; expired sessions require signing in again.
+The catalogue and images are bundled with the app. Shop access uses Riot's client-facing endpoints. History records successfully fetched rotations; missed days cannot be recovered. Background refresh waits for a network connection. Quiet notifications report new rotations or failed checks; Android may delay jobs. Rank, ownership and shop data are cached per account. Unknown prices stay unavailable rather than being estimated.
 
 ## Install
 

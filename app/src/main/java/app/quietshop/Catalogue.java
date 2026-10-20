@@ -14,6 +14,13 @@ final class Catalogue {
   final Map<String, JSONObject> skins = new LinkedHashMap<>(), tiers = new LinkedHashMap<>();
   final Map<String, String> weaponIcons = new LinkedHashMap<>();
   final JSONObject images, info, usage;
+  final Map<String, String> aliases = new HashMap<>(),
+      themeIcons = new HashMap<>(),
+      seasonSets = new HashMap<>();
+  final Map<String, JSONObject> rankSets = new LinkedHashMap<>(),
+      currencies = new LinkedHashMap<>();
+  final Map<String, String> parents = new HashMap<>();
+  final JSONArray seasons;
   volatile JSONObject prices;
   final LruCache<String, Bitmap> bitmaps =
       new LruCache<String, Bitmap>(24000) {
@@ -43,6 +50,22 @@ final class Catalogue {
     info = new JSONObject(read(c, "skin-info.json"));
     usage = new JSONObject(read(c, "weapon-usage.json"));
     prices = Store.cached(c, "prices.json");
+    seasons = new JSONArray(read(c, "seasons.json"));
+    for (int i = 0; i < seasons.length(); i++) {
+      JSONObject a = seasons.getJSONObject(i);
+      parents.put(a.getString("uuid"), a.optString("parentUuid"));
+    }
+    JSONArray rs = new JSONArray(read(c, "competitivetiers.json"));
+    for (int i = 0; i < rs.length(); i++)
+      rankSets.put(rs.getJSONObject(i).getString("uuid"), rs.getJSONObject(i));
+    JSONArray cs = new JSONObject(read(c, "competitive-seasons.json")).getJSONArray("data");
+    for (int i = 0; i < cs.length(); i++) {
+      JSONObject a = cs.getJSONObject(i);
+      seasonSets.put(a.getString("seasonUuid"), a.getString("competitiveTiersUuid"));
+    }
+    JSONArray money = new JSONArray(read(c, "currencies.json"));
+    for (int i = 0; i < money.length(); i++)
+      currencies.put(money.getJSONObject(i).getString("uuid"), money.getJSONObject(i));
     JSONArray ts = new JSONArray(read(c, "tiers.json"));
     for (int i = 0; i < ts.length(); i++) {
       JSONObject t = ts.getJSONObject(i);
@@ -53,6 +76,11 @@ final class Catalogue {
     for (int i = 0; i < th.length(); i++)
       themes.put(
           th.getJSONObject(i).getString("uuid"), th.getJSONObject(i).getString("displayName"));
+    for (int i = 0; i < th.length(); i++) {
+      JSONObject t = th.getJSONObject(i);
+      if (!t.isNull("displayIcon"))
+        themeIcons.put(t.optString("displayName"), t.optString("displayIcon"));
+    }
     JSONArray weapons = new JSONObject(read(c, "weapons.json")).getJSONArray("data");
     for (int i = 0; i < weapons.length(); i++) {
       JSONObject weapon = weapons.getJSONObject(i);
@@ -76,15 +104,74 @@ final class Catalogue {
                 : extra.optString("obtain", "unknown"));
         skin.put("recordedPrice", extra == null ? 0 : extra.optInt("price", 0));
         skins.put(id, skin);
+        aliases.put(skin.optString("uuid"), id);
+        for (int k = 0; k < skin.getJSONArray("levels").length(); k++)
+          aliases.put(skin.getJSONArray("levels").getJSONObject(k).optString("uuid"), id);
+        if (!themeIcons.containsKey(skin.optString("line")))
+          themeIcons.put(skin.optString("line"), primary(skin));
         skin.put("limited", extra != null && extra.optBoolean("limited"));
       }
     }
+    JSONArray accessories = new JSONArray(read(c, "accessories.json"));
+    for (int i = 0; i < accessories.length(); i++) {
+      JSONObject a = accessories.getJSONObject(i);
+      String id = a.getString("uuid");
+      a.put("accessory", true)
+          .put("itemId", id)
+          .put("line", a.optString("kind"))
+          .put("obtain", "unknown");
+      skins.put(id, a);
+      aliases.put(id, id);
+      JSONArray ids = a.optJSONArray("aliases");
+      for (int j = 0; ids != null && j < ids.length(); j++) aliases.put(ids.getString(j), id);
+    }
+    for (var e : skins.entrySet()) e.getValue().put("itemId", e.getKey());
+  }
+
+  String currentSeason(long now) {
+    for (int i = 0; i < seasons.length(); i++) {
+      JSONObject a = seasons.optJSONObject(i);
+      try {
+        if (!a.isNull("parentUuid")
+            && java.time.Instant.parse(a.getString("startTime")).toEpochMilli() <= now
+            && java.time.Instant.parse(a.getString("endTime")).toEpochMilli() > now)
+          return a.getString("uuid");
+      } catch (Exception ignored) {
+      }
+    }
+    return "";
+  }
+
+  JSONObject rank(String season, int tier) {
+    String set = seasonSets.getOrDefault(season, seasonSets.getOrDefault(parents.get(season), ""));
+    JSONObject group = rankSets.get(set);
+    if (group == null) for (JSONObject r : rankSets.values()) group = r;
+    JSONArray ranks = group == null ? new JSONArray() : group.optJSONArray("tiers");
+    for (int i = 0; ranks != null && i < ranks.length(); i++)
+      if (ranks.optJSONObject(i).optInt("tier") == tier) return ranks.optJSONObject(i);
+    return new JSONObject();
+  }
+
+  boolean owned(JSONObject s, Set<String> ids) {
+    return ids.contains(s.optString("uuid")) || ids.contains(s.optString("itemId"));
+  }
+
+  String currencyIcon(String id) {
+    JSONObject c = currencies.get(id);
+    return c == null ? "" : c.optString("displayIcon");
   }
 
   String primary(JSONObject s) {
     String icon = s.optString("displayIcon", "");
-    if (icon.isEmpty() || icon.equals("null"))
-      icon = s.optJSONArray("levels").optJSONObject(0).optString("displayIcon", "");
+    if (icon.isEmpty() || icon.equals("null")) {
+      JSONArray levels = s.optJSONArray("levels"), chromas = s.optJSONArray("chromas");
+      icon =
+          levels != null && levels.length() > 0
+              ? levels.optJSONObject(0).optString("displayIcon", "")
+              : "";
+      if ((icon.isEmpty() || icon.equals("null")) && chromas != null && chromas.length() > 0)
+        icon = chromas.optJSONObject(0).optString("fullRender", "");
+    }
     return icon;
   }
 
@@ -105,7 +192,9 @@ final class Catalogue {
 
   String tier(JSONObject s) {
     JSONObject t = tiers.get(s.optString("contentTierUuid"));
-    return t == null ? "Standard" : t.optString("displayName").replace(" Edition", "");
+    return s.optBoolean("accessory")
+        ? s.optString("kind")
+        : t == null ? "Unrated" : t.optString("displayName").replace(" Edition", "");
   }
 
   String tierIcon(JSONObject s) {
@@ -134,32 +223,12 @@ final class Catalogue {
     if (known > 0) return known;
     if (s == null) return 0;
     if (s.optInt("recordedPrice") > 0) return s.optInt("recordedPrice");
-    String obtain = s.optString("obtain");
-    if (!obtain.equals("store") && !obtain.equals("bundle-only")) return 0;
-    int base =
-        switch (tier(s)) {
-          case "Select" -> 875;
-          case "Deluxe" -> 1275;
-          case "Premium" -> 1775;
-          case "Exclusive" -> 2175;
-          case "Ultra" -> 2475;
-          default -> 0;
-        };
-    return s.optString("weapon").equals("Melee") ? base * 2 : base;
-  }
-
-  boolean estimated(Context c, String id) {
-    JSONObject s = skins.get(id);
-    return s != null
-        && s.optInt("recordedPrice") == 0
-        && prices.optInt(id, 0) == 0
-        && price(c, id) > 0;
+    return 0;
   }
 
   String priceText(Context c, String id) {
     int cost = price(c, id);
-    if (cost > 0)
-      return (estimated(c, id) ? "≈ " : "") + String.format(Locale.getDefault(), "%,d VP", cost);
+    if (cost > 0) return String.format(Locale.getDefault(), "%,d VP", cost);
     JSONObject s = skins.get(id);
     String obtain = s == null ? "" : s.optString("obtain");
     return switch (obtain) {
@@ -171,6 +240,9 @@ final class Catalogue {
   }
 
   static String wiki(JSONObject skin) {
+    if (skin.optBoolean("accessory"))
+      return "https://valorant.fandom.com/wiki/"
+          + android.net.Uri.encode(skin.optString("displayName").replace(' ', '_'));
     return "https://valorant.fandom.com/wiki/"
         + android.net.Uri.encode(skin.optString("line").replace(' ', '_') + "_Collection")
         + "#Weapon_Skins";

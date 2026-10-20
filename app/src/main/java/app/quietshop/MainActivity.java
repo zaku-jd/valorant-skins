@@ -40,6 +40,8 @@ public class MainActivity extends AppCompatActivity {
   Catalogue catalogue;
   Set<String> stars;
   ViewPager2 pager;
+  TabLayout tabs;
+  Set<String> owned = new HashSet<>();
   Typeface condensed;
   Set<String> eligible = new HashSet<>();
   Map<String, Integer> seen = new HashMap<>();
@@ -72,6 +74,13 @@ public class MainActivity extends AppCompatActivity {
     catalogue = Catalogue.get(this);
     stars = new HashSet<>(Store.prefs(this).getStringSet("stars", Util.set()));
     condensed = Typeface.createFromAsset(getAssets(), "category-font.ttf");
+    Accounts.main(this);
+    String requested = getIntent().getStringExtra("account");
+    if (requested != null)
+      try {
+        Accounts.select(this, requested);
+      } catch (Exception ignored) {
+      }
     readShop();
     LinearLayout root = column();
     root.setBackgroundColor(BG);
@@ -83,7 +92,8 @@ public class MainActivity extends AppCompatActivity {
           v.setPadding(bars.left, bars.top, bars.right, 0);
           return i;
         });
-    TabLayout tabs = new TabLayout(this);
+    tabs = new TabLayout(this);
+    tabs.setInlineLabel(true);
     tabs.setBackgroundColor(BG);
     tabs.setTabTextColors(MUTED, PRIMARY);
     tabs.setSelectedTabIndicatorColor(PRIMARY);
@@ -111,11 +121,36 @@ public class MainActivity extends AppCompatActivity {
           }
         });
     root.addView(pager, new LinearLayout.LayoutParams(-1, 0, 1));
-    new TabLayoutMediator(tabs, pager, (tab, index) -> tab.setText(titles[index])).attach();
+    new TabLayoutMediator(
+            tabs,
+            pager,
+            (tab, index) -> {
+              TextView label = text(titles[index], 11, TEXT);
+              label.setGravity(Gravity.CENTER);
+              Drawable glyph =
+                  icon(
+                      new int[] {
+                            R.drawable.ic_grid_view,
+                            R.drawable.ic_storefront,
+                            R.drawable.ic_star_border,
+                            R.drawable.ic_settings
+                          }
+                          [index]);
+              glyph.setBounds(0, 0, dp(15), dp(15));
+              label.setCompoundDrawables(glyph, null, null, null);
+              label.setCompoundDrawablePadding(dp(4));
+              tab.setCustomView(label);
+              tab.setContentDescription(titles[index]);
+            })
+        .attach();
     pager.registerOnPageChangeCallback(
         new ViewPager2.OnPageChangeCallback() {
           public void onPageSelected(int index) {
-            if (pages[index] != null) pages[index].filter();
+            tabs.setVisibility(View.VISIBLE);
+            if (pages[index] != null) {
+              pages[index].chrome(false);
+              pages[index].filter();
+            }
           }
         });
     pager.setCurrentItem(
@@ -213,27 +248,26 @@ public class MainActivity extends AppCompatActivity {
     seen = History.appearances(this, Accounts.active(this));
     savedRotations = History.list(this, Accounts.active(this)).size();
     eligible.clear();
-    Set<String> owned = new HashSet<>();
+    owned.clear();
     JSONArray ownedArray =
         Store.cached(this, "owned_" + Accounts.active(this) + ".json").optJSONArray("ids");
     if (ownedArray != null)
       for (int i = 0; i < ownedArray.length(); i++) owned.add(ownedArray.optString(i));
+    for (String id : new HashSet<>(owned)) owned.add(catalogue.aliases.getOrDefault(id, id));
     for (var entry : catalogue.skins.entrySet())
-      if (catalogue.eligible(entry.getValue()) && !owned.contains(entry.getKey()))
+      if (catalogue.eligible(entry.getValue()) && !catalogue.owned(entry.getValue(), owned))
         eligible.add(entry.getKey());
     livePrices = new JSONObject();
-    JSONObject panel = shop.optJSONObject("SkinsPanelLayout");
-    JSONArray offers = panel == null ? null : panel.optJSONArray("SingleItemStoreOffers");
-    if (offers != null)
-      for (int i = 0; i < offers.length(); i++) {
-        JSONObject o = offers.optJSONObject(i);
-        JSONObject cost = o.optJSONObject("Cost");
+    JSONObject prices = CosmeticModel.prices(shop.optJSONObject("SkinsPanelLayout"));
+    for (Iterator<String> keys = prices.keys(); keys.hasNext(); ) {
+      String id = keys.next();
+      JSONObject cost = prices.optJSONObject(id);
+      if (cost != null && cost.has(Store.VP))
         try {
-          if (cost != null && cost.has(Store.VP))
-            livePrices.put(o.optString("OfferID"), cost.optInt(Store.VP));
+          livePrices.put(id, cost.optInt(Store.VP));
         } catch (Exception ignored) {
         }
-      }
+    }
   }
 
   String priceText(String id) {
@@ -363,7 +397,11 @@ public class MainActivity extends AppCompatActivity {
     final RecyclerView grid;
     final SkinAdapter adapter;
     final TextView status, timer, empty;
-    LinearLayout weapons, filtersPanel;
+    LinearLayout weapons, filtersPanel, searchRow, filters;
+    MaterialButton modeButton;
+    Chip ownedChip;
+    boolean accessories = false, ownedOnly = false, chromeHidden = false;
+    final ScrollGate scrollGate = new ScrollGate();
     Set<String> guns = new HashSet<>();
     boolean allGuns = true;
     Chip lineChip, rarityChip, sortChip;
@@ -391,12 +429,11 @@ public class MainActivity extends AppCompatActivity {
       if (index == 2) {
         timer.setVisibility(View.VISIBLE);
         timer.setTextSize(14);
-        root.addView(
+        MaterialButton about =
             action(
-                "About these estimates",
-                R.drawable.ic_tune,
-                MainActivity.this::explainOdds,
-                false));
+                "About these estimates", R.drawable.ic_tune, MainActivity.this::explainOdds, false);
+        about.setTag("odds");
+        root.addView(about);
       }
       if (index == 1) {
         LinearLayout controls = new LinearLayout(MainActivity.this);
@@ -408,7 +445,7 @@ public class MainActivity extends AppCompatActivity {
       if (index == 0) {
         filtersPanel = column();
         root.addView(filtersPanel);
-        LinearLayout searchRow = new LinearLayout(MainActivity.this);
+        searchRow = new LinearLayout(MainActivity.this);
         filtersPanel.addView(searchRow);
         TextInputLayout input =
             new TextInputLayout(
@@ -421,12 +458,15 @@ public class MainActivity extends AppCompatActivity {
         field.setTextSize(16);
         input.addView(field);
         input.setVisibility(View.GONE);
+        View searchSpace = new View(MainActivity.this);
         searchRow.addView(
             action(
                 "Search skins",
                 R.drawable.ic_search,
                 () -> {
                   input.setVisibility(
+                      input.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+                  searchSpace.setVisibility(
                       input.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
                   if (input.getVisibility() == View.VISIBLE) {
                     field.requestFocus();
@@ -444,36 +484,55 @@ public class MainActivity extends AppCompatActivity {
                 true),
             new LinearLayout.LayoutParams(dp(48), dp(48)));
         searchRow.addView(input, new LinearLayout.LayoutParams(0, dp(58), 1));
+        searchRow.addView(searchSpace, new LinearLayout.LayoutParams(0, dp(1), 1));
         field.addTextChangedListener(
             watch(
                 s -> {
                   query = s;
                   filter();
                 }));
+        modeButton =
+            action(
+                "Gun skins",
+                R.drawable.ic_grid_view,
+                () -> {
+                  accessories = !accessories;
+                  query = "";
+                  field.setText("");
+                  line = "All lines";
+                  rarity = "All rarities";
+                  modeButton.setText(accessories ? "Accessories" : "Gun skins");
+                  modeButton.setIcon(
+                      icon(accessories ? R.drawable.ic_category : R.drawable.ic_grid_view));
+                  weaponStrip();
+                  filter();
+                },
+                false);
+        searchRow.addView(modeButton, new LinearLayout.LayoutParams(-2, dp(48)));
+        ownedChip = filterChip("Owned items  ·  show all", () -> {});
+        ownedChip.setVisibility(View.GONE);
+        ownedChip.setOnClickListener(
+            v -> {
+              ownedOnly = false;
+              filter();
+            });
+        filtersPanel.addView(ownedChip);
         weapons = new LinearLayout(MainActivity.this);
         filtersPanel.addView(horizontal(weapons), new LinearLayout.LayoutParams(-1, dp(60)));
         weaponStrip();
-        LinearLayout filters = new LinearLayout(MainActivity.this);
+        filters = new LinearLayout(MainActivity.this);
+        filters.setPadding(dp(2), 0, dp(2), 0);
         lineChip = filterChip("Skinline", () -> chooseLine(this));
         rarityChip = filterChip("Rarity", () -> chooseRarity(this));
         sortChip = filterChip("Sort", () -> chooseSort(this));
         filters.addView(lineChip);
         filters.addView(rarityChip);
         filters.addView(sortChip);
-        Chip pass =
-            filterChip(
-                Store.prefs(MainActivity.this).getBoolean("hidePass", true)
-                    ? "Battle pass hidden"
-                    : "Battle pass shown",
-                () -> {});
-        pass.setOnClickListener(
-            v -> {
-              boolean hide = !Store.prefs(MainActivity.this).getBoolean("hidePass", true);
-              Store.prefs(MainActivity.this).edit().putBoolean("hidePass", hide).apply();
-              pass.setText(hide ? "Battle pass hidden" : "Battle pass shown");
-              filter();
-            });
-        filters.addView(pass);
+        for (View chip : new View[] {lineChip, rarityChip, sortChip}) {
+          LinearLayout.LayoutParams spacing = new LinearLayout.LayoutParams(-2, -2);
+          spacing.setMargins(dp(6), 0, dp(6), 0);
+          chip.setLayoutParams(spacing);
+        }
         filtersPanel.addView(horizontal(filters), new LinearLayout.LayoutParams(-1, dp(48)));
         filtersPanel.addView(status);
       }
@@ -500,16 +559,39 @@ public class MainActivity extends AppCompatActivity {
       adapter = new SkinAdapter(this);
       grid.setAdapter(adapter);
       root.addView(grid, new LinearLayout.LayoutParams(-1, 0, 1));
-      if (index == 0)
+      if (index == 0 || index == 2)
         grid.addOnScrollListener(
             new RecyclerView.OnScrollListener() {
               public void onScrolled(RecyclerView r, int dx, int dy) {
-                if (dy > 8 && r.computeVerticalScrollOffset() > dp(60))
-                  filtersPanel.setVisibility(View.GONE);
-                else if (dy < 0) filtersPanel.setVisibility(View.VISIBLE);
+                if (r.getScrollState() != RecyclerView.SCROLL_STATE_IDLE) scrollGate.move(dy);
+              }
+
+              public void onScrollStateChanged(RecyclerView r, int state) {
+                if (state == RecyclerView.SCROLL_STATE_IDLE)
+                  chrome(scrollGate.settle(chromeHidden, !r.canScrollVertically(-1), dp(48)));
               }
             });
+      ((GridLayoutManager) grid.getLayoutManager())
+          .setSpanSizeLookup(
+              new GridLayoutManager.SpanSizeLookup() {
+                public int getSpanSize(int position) {
+                  return position < ids.size() && ids.get(position).equals("__accessories") ? 2 : 1;
+                }
+              });
       filter();
+    }
+
+    void chrome(boolean hide) {
+      chromeHidden = hide;
+      if (pager.getCurrentItem() == index) tabs.setVisibility(hide ? View.GONE : View.VISIBLE);
+      if (index == 0 && filtersPanel != null)
+        filtersPanel.setVisibility(hide ? View.GONE : View.VISIBLE);
+      if (index == 2) {
+        timer.setVisibility(hide ? View.GONE : View.VISIBLE);
+        status.setVisibility(hide ? View.GONE : View.VISIBLE);
+        View about = root.findViewWithTag("odds");
+        if (about != null) about.setVisibility(hide ? View.GONE : View.VISIBLE);
+      }
     }
 
     Chip filterChip(String label, Runnable run) {
@@ -523,6 +605,24 @@ public class MainActivity extends AppCompatActivity {
     void weaponStrip() {
       if (weapons == null) return;
       weapons.removeAllViews();
+      if (accessories) {
+        for (String kind : new String[] {"All", "Buddies", "Cards", "Sprays", "Titles"}) {
+          MaterialButton option =
+              action(
+                  kind,
+                  R.drawable.ic_category,
+                  () -> {
+                    line = kind.equals("All") ? "All lines" : kind;
+                    weaponStrip();
+                    filter();
+                  },
+                  false);
+          option.setAlpha(
+              (kind.equals("All") ? line.equals("All lines") : line.equals(kind)) ? 1 : 0.5f);
+          weapons.addView(option);
+        }
+        return;
+      }
       MaterialButton all =
           action(
               "All",
@@ -584,13 +684,29 @@ public class MainActivity extends AppCompatActivity {
       }
       if (adapter == null) return;
       ids.clear();
-      if (index == 1) ids.addAll(Store.offers(shop));
-      else
+      if (index == 1) {
+        ids.addAll(Store.offers(shop));
+        ids.sort(
+            Comparator.comparing(
+                id ->
+                    catalogue.skins.containsKey(id)
+                        ? catalogue.skins.get(id).optString("displayName")
+                        : id));
+        if (shop.has("AccessoryStore")) {
+          ids.add("__accessories");
+          ids.addAll(CosmeticModel.accessories(shop));
+        }
+      } else
         for (var entry : catalogue.skins.entrySet()) {
           JSONObject s = entry.getValue();
+          if (s.optBoolean("default")) continue;
+          if (index == 0 && s.optBoolean("accessory") != accessories) continue;
+          if (index == 0 && ownedOnly && !catalogue.owned(s, owned)) continue;
           if (index == 2 && !stars.contains(entry.getKey())) continue;
-          if (index == 0 && !allGuns && !guns.contains(s.optString("weapon"))) continue;
+          if (index == 0 && !accessories && !allGuns && !guns.contains(s.optString("weapon")))
+            continue;
           if (index == 0
+              && !ownedOnly
               && Store.prefs(MainActivity.this).getBoolean("hidePass", true)
               && s.optString("obtain").equals("pass")) continue;
           if (!line.equals("All lines") && !line.equals(s.optString("line"))) continue;
@@ -606,19 +722,27 @@ public class MainActivity extends AppCompatActivity {
                 JSONObject s = catalogue.skins.get(id);
                 return s == null ? id : s.optString("displayName");
               });
-      if (sort.equals("Price: low to high"))
+      if (index != 1 && sort.equals("Price: low to high"))
         ids.sort(Comparator.comparingInt((String id) -> price(id)).thenComparing(names));
-      else if (sort.equals("Price: high to low"))
+      else if (index != 1 && sort.equals("Price: high to low"))
         ids.sort(
             Comparator.comparingInt((String id) -> SkinLogic.priceSort(price(id), true))
                 .thenComparing(names));
-      else ids.sort(names);
+      else if (index != 1) ids.sort(names);
       empty.setVisibility(ids.isEmpty() ? View.VISIBLE : View.GONE);
       View signin = root.findViewWithTag("signin");
       if (signin != null) signin.setVisibility(ids.isEmpty() ? View.VISIBLE : View.GONE);
       adapter.notifyDataSetChanged();
       if (index == 1 && !busy) status.setText(activeLabel());
-      if (index == 0) status.setText(ids.size() + " skins · pick-rate snapshot 18 Oct 2026");
+      if (index == 0) {
+        status.setText(
+            ids.size()
+                + (accessories ? " accessories" : " gun skins")
+                + (ownedOnly ? " · owned by selected account" : ""));
+        ownedChip.setVisibility(ownedOnly ? View.VISIBLE : View.GONE);
+        lineChip.setVisibility(accessories ? View.GONE : View.VISIBLE);
+        rarityChip.setVisibility(accessories ? View.GONE : View.VISIBLE);
+      }
       if (index == 2) {
         int desired = 0;
         for (String id : stars) if (eligible.contains(id)) desired++;
@@ -720,6 +844,17 @@ public class MainActivity extends AppCompatActivity {
 
     public void onBindViewHolder(SkinHolder h, int pos) {
       String id = page.ids.get(pos);
+      boolean divider = id.equals("__accessories");
+      h.body.setVisibility(divider ? View.GONE : View.VISIBLE);
+      h.section.setVisibility(divider ? View.VISIBLE : View.GONE);
+      if (divider) {
+        h.card.setCardBackgroundColor(BG);
+        h.card.setStrokeWidth(0);
+        h.card.setOnClickListener(null);
+        h.section.setText("Accessories  ·  weekly rotation");
+        return;
+      }
+      h.card.setStrokeWidth(dp(1));
       JSONObject s = catalogue.skins.get(id);
       h.card.setOnClickListener(v -> details(id));
       h.stats.setVisibility(page.index == 2 ? View.VISIBLE : View.GONE);
@@ -737,7 +872,11 @@ public class MainActivity extends AppCompatActivity {
                     : "Owned or not in the estimated daily pool"));
       }
       h.name.setText(s == null ? "New skin" : s.optString("displayName"));
-      h.price.setText(priceText(id));
+      applyPrice(h.price, id);
+      if (s != null && s.optBoolean("accessory") && s.optString("kind").equals("Titles")) {
+        h.stats.setVisibility(View.VISIBLE);
+        h.stats.setText(s.optString("titleText", s.optString("displayName")));
+      }
       h.star.setIcon(icon(stars.contains(id) ? R.drawable.ic_star : R.drawable.ic_star_border));
       h.star.setContentDescription(stars.contains(id) ? "Unstar skin" : "Star skin");
       h.star.setOnClickListener(v -> star(id));
@@ -763,6 +902,8 @@ public class MainActivity extends AppCompatActivity {
     MaterialCardView card;
     TextView name, price, tier, stats;
     ImageView art, rarityArt;
+    LinearLayout body;
+    TextView section;
     MaterialButton star;
 
     SkinHolder() {
@@ -775,9 +916,18 @@ public class MainActivity extends AppCompatActivity {
       RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(-1, -2);
       lp.setMargins(dp(4), dp(4), dp(4), dp(8));
       card.setLayoutParams(lp);
-      LinearLayout body = column();
+      LinearLayout container = column();
+      card.addView(container);
+      section = text("", 14, MUTED);
+      section.setPadding(dp(4), dp(20), dp(4), dp(12));
+      com.google.android.material.divider.MaterialDivider line =
+          new com.google.android.material.divider.MaterialDivider(MainActivity.this);
+      section.setBackgroundColor(BG);
+      container.addView(line, new LinearLayout.LayoutParams(-1, dp(1)));
+      container.addView(section);
+      body = column();
       body.setPadding(dp(12), dp(8), dp(12), dp(12));
-      card.addView(body);
+      container.addView(body);
       LinearLayout head = new LinearLayout(MainActivity.this);
       head.setGravity(Gravity.CENTER_VERTICAL);
       rarityArt = new ImageView(MainActivity.this);
@@ -812,79 +962,11 @@ public class MainActivity extends AppCompatActivity {
   }
 
   void chooseLine(Page p) {
-    TreeSet<String> lines = new TreeSet<>();
-    for (JSONObject s : catalogue.skins.values()) lines.add(s.optString("line"));
-    List<String> values = new ArrayList<>();
-    values.add("All lines");
-    values.addAll(lines);
-    BottomSheetDialog dialog = new BottomSheetDialog(this);
-    LinearLayout body = column();
-    body.setPadding(dp(20), dp(16), dp(20), dp(24));
-    body.addView(text("Skinline", 24, TEXT));
-    TextInputLayout field =
-        new TextInputLayout(this, null, com.google.android.material.R.attr.textInputOutlinedStyle);
-    field.setHint("Find a skinline");
-    TextInputEditText edit = new TextInputEditText(field.getContext());
-    edit.setSingleLine(true);
-    field.addView(edit);
-    body.addView(field);
-    ListView list = new ListView(this);
-    List<String> shown = new ArrayList<>(values);
-    ArrayAdapter<String> adapter =
-        new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, shown);
-    list.setAdapter(adapter);
-    body.addView(list, new LinearLayout.LayoutParams(-1, dp(350)));
-    edit.addTextChangedListener(
-        watch(
-            s -> {
-              shown.clear();
-              for (String line : values)
-                if (line.toLowerCase(Locale.ROOT).contains(s.toLowerCase(Locale.ROOT)))
-                  shown.add(line);
-              adapter.notifyDataSetChanged();
-            }));
-    list.setOnItemClickListener(
-        (a, v, pos, id) -> {
-          p.line = shown.get(pos);
-          p.lineChip.setText(p.line.equals("All lines") ? "Skinline" : p.line);
-          p.filter();
-          dialog.dismiss();
-        });
-    dialog.setContentView(body);
-    dialog.show();
+    Pickers.lines(this, p);
   }
 
   void chooseRarity(Page p) {
-    BottomSheetDialog dialog = new BottomSheetDialog(this);
-    LinearLayout body = column();
-    body.setPadding(dp(20), dp(16), dp(20), dp(24));
-    for (String name :
-        new String[] {
-          "All rarities", "Standard", "Select", "Deluxe", "Premium", "Exclusive", "Ultra"
-        }) {
-      MaterialButton row =
-          action(
-              name,
-              R.drawable.ic_tune,
-              () -> {
-                p.rarity = name;
-                p.rarityChip.setText(name.equals("All rarities") ? "Rarity" : name);
-                p.filter();
-                dialog.dismiss();
-              },
-              false);
-      for (JSONObject tier : catalogue.tiers.values())
-        if (tier.optString("displayName").startsWith(name)) {
-          Bitmap image = catalogue.image(this, tier.optString("displayIcon"));
-          if (image != null) {
-            row.setIcon(new android.graphics.drawable.BitmapDrawable(getResources(), image));
-            row.setIconTint(null);
-          }
-        }
-      body.addView(row);
-    }
-    dialog.setContentView(body);
-    dialog.show();
+    Pickers.rarity(this, p);
   }
 
   void chooseSort(Page p) {
@@ -943,8 +1025,6 @@ public class MainActivity extends AppCompatActivity {
     loadImage(art, catalogue.primary(s));
     body.addView(
         text(s.optString("line") + " · " + catalogue.tier(s) + " · " + priceText(id), 15, MUTED));
-    if (catalogue.estimated(this, id) && !livePrices.has(id))
-      body.addView(text("≈ Edition base estimate. Actual VP cost can differ.", 12, MUTED));
     LinearLayout variants = new LinearLayout(this);
     JSONArray chromas = s.optJSONArray("chromas");
     if (chromas != null)
@@ -999,42 +1079,7 @@ public class MainActivity extends AppCompatActivity {
     scroll.addView(body);
     page.root.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
     String active = Accounts.active(this);
-    List<JSONObject> accounts = Accounts.list(this);
-    if (accounts.isEmpty())
-      body.addView(text("Sign in to save your daily shop history.", 16, TEXT));
-    else
-      for (JSONObject account : accounts) {
-        String id = account.optString("id");
-        boolean selected = id.equals(active);
-        MaterialCardView card = new MaterialCardView(this);
-        card.setCardBackgroundColor(SURFACE);
-        card.setRadius(dp(18));
-        card.setStrokeWidth(dp(selected ? 2 : 1));
-        card.setStrokeColor(selected ? PRIMARY : 0xff332222);
-        LinearLayout item = column();
-        item.setPadding(dp(16), dp(12), dp(16), dp(12));
-        card.addView(item);
-        item.addView(text((selected ? "Signed in as " : "") + Accounts.label(account), 17, TEXT));
-        item.addView(
-            text(
-                account.optBoolean("expired")
-                    ? "Sign-in expired · reconnect required"
-                    : account.optString("error").isEmpty()
-                        ? (selected ? "Active account" : "Saved session · tap to switch")
-                        : account.optString("error"),
-                13,
-                account.optBoolean("expired") ? PRIMARY : MUTED));
-        if (!selected)
-          item.addView(
-              action(
-                  "Switch to this account",
-                  R.drawable.ic_switch_account,
-                  () -> switchAccount(id),
-                  false));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
-        params.setMargins(0, 0, 0, dp(12));
-        body.addView(card, params);
-      }
+    AccountSection.add(this, body);
     body.addView(
         action("Add / reconnect account", R.drawable.ic_switch_account, this::login, false));
     if (!active.isEmpty())
@@ -1083,7 +1128,7 @@ public class MainActivity extends AppCompatActivity {
         });
     com.google.android.material.materialswitch.MaterialSwitch notices =
         new com.google.android.material.materialswitch.MaterialSwitch(this);
-    notices.setText("Quiet daily account reminders");
+    notices.setText("Quiet shop and account notifications");
     notices.setChecked(Store.prefs(this).getBoolean("notices", true));
     body.addView(notices);
     notices.setOnCheckedChangeListener(
@@ -1121,6 +1166,49 @@ public class MainActivity extends AppCompatActivity {
                 + " device.",
             12,
             MUTED));
+  }
+
+  void showOwned(String account) {
+    try {
+      Accounts.select(this, account);
+    } catch (Exception ignored) {
+      return;
+    }
+    readShop();
+    if (pages[0] == null) pages[0] = new Page(0);
+    pages[0].ownedOnly = true;
+    pages[0].allGuns = true;
+    pages[0].guns.clear();
+    pages[0].line = "All lines";
+    pages[0].rarity = "All rarities";
+    pages[0].query = "";
+    pages[0].chrome(false);
+    pages[0].filter();
+    pager.setCurrentItem(0, true);
+  }
+
+  void applyPrice(TextView view, String id) {
+    JSONObject s = catalogue.skins.get(id);
+    String currency = Store.VP;
+    String value = priceText(id);
+    if (s != null && s.optBoolean("accessory")) {
+      JSONObject costs = CosmeticModel.accessoryCosts(shop, id);
+      if (costs.length() > 0) {
+        currency = costs.keys().next();
+        value = String.format(Locale.getDefault(), "%,d", costs.optInt(currency));
+      } else {
+        value = s.optString("kind");
+        currency = "";
+      }
+    } else if (value.endsWith(" VP")) value = value.substring(0, value.length() - 3);
+    else currency = "";
+    view.setText(value);
+    Bitmap image = catalogue.image(this, catalogue.currencyIcon(currency));
+    Drawable draw =
+        image == null ? null : new android.graphics.drawable.BitmapDrawable(getResources(), image);
+    if (draw != null) draw.setBounds(0, 0, dp(16), dp(16));
+    view.setCompoundDrawables(draw, null, null, null);
+    view.setCompoundDrawablePadding(dp(5));
   }
 
   void switchAccount(String id) {

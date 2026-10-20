@@ -34,7 +34,7 @@ final class Daily {
         new JobInfo.Builder(JOB, new ComponentName(c, DailyJob.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
             .setMinimumLatency(delay)
-            .setOverrideDeadline(delay + 15 * 60000L)
+            .setBackoffCriteria(30 * 60000L, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             .setPersisted(true)
             .build());
   }
@@ -59,12 +59,12 @@ final class Daily {
     long now = System.currentTimeMillis();
     if (now - Store.prefs(c).getLong(key, 0) < 86400000L) return;
     boolean expired = error instanceof Store.SessionExpired;
-    String title = expired ? "Account sign-in expired" : "Shop refresh needs attention";
+    String title = expired ? "Time to reconnect 🔑" : "Shop check hit a snag 🛠️";
     String message =
         Accounts.label(account)
             + (expired
                 ? " — reconnect in Settings to resume daily history."
-                : " — today's offers couldn't be loaded. Check your connection or open Settings.");
+                : " — couldn't check the shop this time. Open the app to try again.");
     PendingIntent open =
         PendingIntent.getActivity(
             c,
@@ -87,5 +87,62 @@ final class Daily {
                 .setOnlyAlertOnce(true)
                 .build());
     Store.prefs(c).edit().putLong(key, now).apply();
+  }
+
+  static boolean online(Context c) {
+    android.net.ConnectivityManager cm = c.getSystemService(android.net.ConnectivityManager.class);
+    android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(cm.getActiveNetwork());
+    return caps != null
+        && caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+  }
+
+  static void success(Context c, String id, JSONObject previous, JSONObject shop) {
+    JSONObject p = shop.optJSONObject("SkinsPanelLayout");
+    if (p == null || Store.offers(shop).isEmpty() || !Store.prefs(c).getBoolean("notices", true))
+      return;
+    long rotation =
+        SkinLogic.rotation(
+            SkinLogic.expiresAt(
+                shop.optLong("checkedAt"),
+                p.optLong("SingleItemOffersRemainingDurationInSeconds")));
+    JSONObject old = previous.optJSONObject("SkinsPanelLayout");
+    if (old != null
+        && rotation
+            == SkinLogic.rotation(
+                SkinLogic.expiresAt(
+                    previous.optLong("checkedAt"),
+                    old.optLong("SingleItemOffersRemainingDurationInSeconds")))) return;
+    String key = "newRotation_" + id;
+    if (Store.prefs(c).getLong(key, 0) == rotation) return;
+    channel(c);
+    if (Build.VERSION.SDK_INT >= 33
+        && c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED) return;
+    String name = "";
+    try {
+      name = Accounts.label(Accounts.get(c, id));
+    } catch (Exception ignored) {
+    }
+    PendingIntent open =
+        PendingIntent.getActivity(
+            c,
+            id.hashCode(),
+            new Intent(c, MainActivity.class).putExtra("account", id).putExtra("page", 1),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    c.getSystemService(NotificationManager.class)
+        .notify(
+            ("shop" + id).hashCode(),
+            new Notification.Builder(c, CHANNEL)
+                .setSmallIcon(R.drawable.ic_refresh)
+                .setContentTitle("New skins in shop! ✨")
+                .setContentText(name + " — today's rotation is ready. Take a look.")
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setSound(null)
+                .setVibrate(new long[0])
+                .setDefaults(0)
+                .setOnlyAlertOnce(true)
+                .build());
+    Store.prefs(c).edit().putLong(key, rotation).apply();
   }
 }

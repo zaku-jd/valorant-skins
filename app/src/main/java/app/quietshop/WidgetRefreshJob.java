@@ -14,7 +14,7 @@ public class WidgetRefreshJob extends JobService {
         executor.submit(
             () -> {
               try {
-                Store.refresh(this, Accounts.active(this), true);
+                Store.refresh(this, Accounts.main(this), true);
                 Store.prefs(this).edit().remove("widgetState").apply();
               } catch (Exception e) {
                 Store.prefs(this).edit().putString("widgetState", "Open app").apply();
