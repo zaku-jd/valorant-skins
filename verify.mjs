@@ -10,7 +10,7 @@ for(const w of weapons){assert(w.displayName&&Array.isArray(w.skins));categories
   }
 }for(const t of tiers)if(t.displayIcon)required.add(t.displayIcon);
 const accessories=read('accessories.json');
-for(const a of accessories){assert(a.uuid&&a.displayName&&Array.isArray(a.aliases));if(a.displayIcon)required.add(a.displayIcon);}
+for(const a of accessories){assert(a.uuid&&a.displayName&&Array.isArray(a.aliases));for(const key of ['displayIcon','preview','widePreview'])if(a[key])required.add(a[key]);}
 for(const group of read('competitivetiers.json'))for(const rank of group.tiers)if(rank.largeIcon)required.add(rank.largeIcon);
 for(const c of read('currencies.json'))if(c.displayIcon)required.add(c.displayIcon);
 for(const w of weapons)for(const s of w.skins)assert(!s.displayName.startsWith('Standard ')&&!s.assetPath.includes('/Melee/Standard/'));

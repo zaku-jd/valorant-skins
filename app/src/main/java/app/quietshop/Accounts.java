@@ -57,7 +57,7 @@ final class Accounts {
   }
 
   static synchronized void put(Context c, JSONObject a) throws Exception {
-    JSONObject r = root(c);
+    JSONObject r = new JSONObject(root(c).toString());
     AccountModel.upsert(r, a);
     Vault.save(c, r);
   }
@@ -87,11 +87,14 @@ final class Accounts {
   }
 
   static synchronized void remove(Context c, String id) throws Exception {
-    JSONObject r = root(c);
+    JSONObject r = new JSONObject(root(c).toString());
     r.getJSONObject("accounts").remove(id);
     Vault.save(c, r);
     Store.file(c, "shop_" + id + ".json").delete();
-    Store.prefs(c).edit().remove("active").remove("widgetState").apply();
+    if (id.equals(Store.prefs(c).getString("active", "")))
+      Store.prefs(c).edit().remove("active").apply();
+    if (id.equals(Store.prefs(c).getString("mainAccount", "")))
+      Store.prefs(c).edit().remove("mainAccount").remove("widgetState").apply();
     active(c);
   }
 

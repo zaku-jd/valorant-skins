@@ -42,6 +42,8 @@ public class MainActivity extends AppCompatActivity {
   ViewPager2 pager;
   TabLayout tabs;
   Set<String> owned = new HashSet<>();
+  String dataStamp = "";
+  boolean ownershipSynced;
   Typeface condensed;
   Set<String> eligible = new HashSet<>();
   Map<String, Integer> seen = new HashMap<>();
@@ -225,6 +227,7 @@ public class MainActivity extends AppCompatActivity {
   }
 
   void loadImage(ImageView view, String url) {
+    if (Objects.equals(view.getTag(), url) && view.getDrawable() != null) return;
     view.setImageDrawable(null);
     view.setTag(url);
     Bitmap cached = catalogue.bitmaps.get(url == null ? "" : url);
@@ -234,6 +237,7 @@ public class MainActivity extends AppCompatActivity {
     }
     imageTasks.submit(
         () -> {
+          if (!Objects.equals(view.getTag(), url) || Thread.currentThread().isInterrupted()) return;
           Bitmap b = catalogue.image(this, url);
           if (b != null)
             runOnUiThread(
@@ -244,9 +248,23 @@ public class MainActivity extends AppCompatActivity {
   }
 
   void readShop() {
+    String account = Accounts.active(this);
+    String stamp =
+        account
+            + Store.file(this, "shop_" + account + ".json").lastModified()
+            + ":"
+            + Store.file(this, "owned_" + account + ".json").lastModified()
+            + ":"
+            + getDatabasePath("shop-history.db").lastModified();
+    if (stamp.equals(dataStamp)) return;
+    dataStamp = stamp;
     shop = Store.shop(this);
-    seen = History.appearances(this, Accounts.active(this));
-    savedRotations = History.list(this, Accounts.active(this)).size();
+    List<JSONObject> captures = History.list(this, account);
+    seen = new HashMap<>();
+    for (JSONObject capture : captures)
+      for (String id : Store.offers(capture)) seen.put(id, seen.getOrDefault(id, 0) + 1);
+    savedRotations = captures.size();
+    ownershipSynced = Store.cached(this, "owned_" + account + ".json").has("synced");
     eligible.clear();
     owned.clear();
     JSONArray ownedArray =
@@ -322,7 +340,7 @@ public class MainActivity extends AppCompatActivity {
   void star(String id) {
     if (!stars.add(id)) stars.remove(id);
     Store.prefs(this).edit().putStringSet("stars", new HashSet<>(stars)).apply();
-    for (Page p : pages) if (p != null) p.filter();
+    for (Page p : pages) if (p != null && p.index != 3) p.filter();
   }
 
   String activeLabel() {
@@ -345,6 +363,22 @@ public class MainActivity extends AppCompatActivity {
       pager.setCurrentItem(1, true);
       refresh();
     }
+  }
+
+  @Override
+  protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    setIntent(intent);
+    String requested = intent.getStringExtra("account");
+    if (requested != null)
+      try {
+        Accounts.select(this, requested);
+      } catch (Exception ignored) {
+      }
+    readShop();
+    for (Page page : pages) if (page != null) page.filter();
+    pager.setCurrentItem(Math.max(0, Math.min(3, intent.getIntExtra("page", 1))), false);
+    if (requested != null) refresh();
   }
 
   @Override
@@ -402,6 +436,8 @@ public class MainActivity extends AppCompatActivity {
     Chip ownedChip;
     boolean accessories = false, ownedOnly = false, chromeHidden = false;
     final ScrollGate scrollGate = new ScrollGate();
+    String settingsStamp = "";
+    Runnable pendingSearch;
     Set<String> guns = new HashSet<>();
     boolean allGuns = true;
     Chip lineChip, rarityChip, sortChip;
@@ -488,8 +524,13 @@ public class MainActivity extends AppCompatActivity {
         field.addTextChangedListener(
             watch(
                 s -> {
-                  query = s;
-                  filter();
+                  if (pendingSearch != null) clock.removeCallbacks(pendingSearch);
+                  pendingSearch =
+                      () -> {
+                        query = s;
+                        filter();
+                      };
+                  clock.postDelayed(pendingSearch, 120);
                 }));
         modeButton =
             action(
@@ -606,7 +647,7 @@ public class MainActivity extends AppCompatActivity {
       if (weapons == null) return;
       weapons.removeAllViews();
       if (accessories) {
-        for (String kind : new String[] {"All", "Buddies", "Cards", "Sprays", "Titles"}) {
+        for (String kind : new String[] {"All", "Buddies", "Cards", "Sprays", "Titles", "Flex"}) {
           MaterialButton option =
               action(
                   kind,
@@ -679,7 +720,11 @@ public class MainActivity extends AppCompatActivity {
 
     void filter() {
       if (index == 3) {
-        populateSettings(this);
+        String stamp = AccountSection.stamp(MainActivity.this);
+        if (!stamp.equals(settingsStamp)) {
+          settingsStamp = stamp;
+          populateSettings(this);
+        }
         return;
       }
       if (adapter == null) return;
@@ -759,12 +804,7 @@ public class MainActivity extends AppCompatActivity {
             "Based on "
                 + eligible.size()
                 + " catalogue-eligible, unowned skins · "
-                + (Store.cached(
-                            MainActivity.this,
-                            "owned_" + Accounts.active(MainActivity.this) + ".json")
-                        .has("synced")
-                    ? "ownership synced"
-                    : "ownership not yet available"));
+                + (ownershipSynced ? "ownership synced" : "ownership not yet available"));
       }
       countdown();
     }
@@ -872,6 +912,11 @@ public class MainActivity extends AppCompatActivity {
                     : "Owned or not in the estimated daily pool"));
       }
       h.name.setText(s == null ? "New skin" : s.optString("displayName"));
+      boolean title =
+          s != null && s.optBoolean("accessory") && s.optString("kind").equals("Titles");
+      h.titlePreview.setVisibility(title ? View.VISIBLE : View.GONE);
+      h.art.setVisibility(title ? View.GONE : View.VISIBLE);
+      if (title) h.titlePreview.setText(s.optString("titleText", s.optString("displayName")));
       applyPrice(h.price, id);
       if (s != null && s.optBoolean("accessory") && s.optString("kind").equals("Titles")) {
         h.stats.setVisibility(View.VISIBLE);
@@ -900,7 +945,7 @@ public class MainActivity extends AppCompatActivity {
 
   class SkinHolder extends RecyclerView.ViewHolder {
     MaterialCardView card;
-    TextView name, price, tier, stats;
+    TextView name, price, tier, stats, titlePreview;
     ImageView art, rarityArt;
     LinearLayout body;
     TextView section;
@@ -941,6 +986,10 @@ public class MainActivity extends AppCompatActivity {
       art = new ImageView(MainActivity.this);
       art.setScaleType(ImageView.ScaleType.FIT_CENTER);
       body.addView(art, new LinearLayout.LayoutParams(-1, dp(92)));
+      titlePreview = text("", 20, TEXT);
+      titlePreview.setGravity(Gravity.CENTER);
+      titlePreview.setVisibility(View.GONE);
+      body.addView(titlePreview, new LinearLayout.LayoutParams(-1, dp(92)));
       name = text("", 15, TEXT);
       name.setTypeface(null, Typeface.BOLD);
       name.setMaxLines(2);
@@ -1021,8 +1070,31 @@ public class MainActivity extends AppCompatActivity {
     body.addView(head);
     ImageView art = new ImageView(this);
     art.setScaleType(ImageView.ScaleType.FIT_CENTER);
-    body.addView(art, new LinearLayout.LayoutParams(-1, dp(185)));
+    body.addView(art, new LinearLayout.LayoutParams(-1, dp(s.optBoolean("accessory") ? 320 : 185)));
     loadImage(art, catalogue.primary(s));
+    if (s.optString("kind").equals("Titles")) {
+      art.setVisibility(View.GONE);
+      TextView title = text(s.optString("titleText", s.optString("displayName")), 26, TEXT);
+      title.setGravity(Gravity.CENTER);
+      title.setPadding(dp(16), dp(36), dp(16), dp(36));
+      body.addView(title);
+    }
+    if (s.optBoolean("accessory") && !s.optString("widePreview").isEmpty()) {
+      LinearLayout previews = new LinearLayout(this);
+      previews.addView(
+          action(
+              "Portrait",
+              R.drawable.ic_grid_view,
+              () -> loadImage(art, catalogue.primary(s)),
+              false));
+      previews.addView(
+          action(
+              "Banner",
+              R.drawable.ic_grid_view,
+              () -> loadImage(art, s.optString("widePreview")),
+              false));
+      body.addView(previews);
+    }
     body.addView(
         text(s.optString("line") + " · " + catalogue.tier(s) + " · " + priceText(id), 15, MUTED));
     LinearLayout variants = new LinearLayout(this);

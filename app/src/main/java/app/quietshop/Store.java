@@ -286,7 +286,7 @@ final class Store {
     cache(c, "prices.json", prices);
     Catalogue.get(c).prices = prices;
     JSONObject ownedCache = cached(c, "owned_" + id + ".json");
-    if (ownedCache.optInt("schema") < 4 || now - ownedCache.optLong("synced") > 86400000L) {
+    if (ownedCache.optInt("schema") < 5 || now - ownedCache.optLong("synced") > 86400000L) {
       JSONObject byType = ownedCache.optJSONObject("byType");
       if (byType == null) byType = new JSONObject();
       boolean complete = true;
@@ -296,7 +296,8 @@ final class Store {
             "dd3bf334-87f3-40bd-b043-682a57a8dc3a",
             "3f296c07-64c3-494c-923b-fe692a4fa1bd",
             "d5f120f8-ff8c-4aac-92ea-f2b5acbe9475",
-            "de7caa6b-adf7-4588-bbd1-143831e786c6"
+            "de7caa6b-adf7-4588-bbd1-143831e786c6",
+            "03a572de-4234-31ed-d344-ababa488f981"
           }) {
         try {
           JSONObject owned =
@@ -331,7 +332,7 @@ final class Store {
               .put("byType", byType)
               .put("ids", new JSONArray(ids))
               .put("synced", now)
-              .put("schema", 4)
+              .put("schema", 5)
               .put("complete", complete));
     }
     JSONObject profile = cached(c, "profile_" + id + ".json");

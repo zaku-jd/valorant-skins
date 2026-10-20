@@ -162,7 +162,11 @@ final class Catalogue {
   }
 
   String primary(JSONObject s) {
-    String icon = s.optString("displayIcon", "");
+    String icon =
+        s.optBoolean("accessory")
+            ? s.optString("preview", s.optString("displayIcon", ""))
+            : s.optString("displayIcon", "");
+    if (icon.isEmpty()) icon = s.optString("displayIcon", "");
     if (icon.isEmpty() || icon.equals("null")) {
       JSONArray levels = s.optJSONArray("levels"), chromas = s.optJSONArray("chromas");
       icon =

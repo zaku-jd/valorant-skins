@@ -12,6 +12,8 @@ Material icons: Google Material Design Icons, Apache License 2.0: https://github
 
 Accessories, currency icons, player-card portraits, competitive tier icons and season mappings: https://valorant-api.com/ , bundled snapshot retrieved 20 October 2026. Additional images fit within 400 × 320 pixels as transparent WebP. Default weapon entries are excluded. The Luxe Knife preview uses its chroma render.
 
+Full accessory previews and additional Flex records were refreshed on 20 October 2026 from https://valorant-api.com/ and https://valorant.gs/data/ (its buddies, cards, sprays, titles and flex tables). Preview art is compressed to transparent WebP within 640 × 640 pixels; names, UUIDs and artwork come from those feeds. No missing items or images are generated. The named catalogue contains 3,351 accessories, including 21 Flex records added in 0.4.1.
+
 Riot fist mark: Simple Icons v11, https://github.com/simple-icons/simple-icons/blob/11.0.0/icons/riotgames.svg , distributed under CC0 by that project. The Riot mark remains a Riot Games trademark.
 
 Material Components for Android, AndroidX, Gradle and their dependencies retain their respective open-source licenses. Dependency versions are declared in the Gradle project. Material Components and AndroidX use Apache License 2.0. Kotlin uses Apache License 2.0. https://github.com/material-components/material-components-android/blob/master/LICENSE

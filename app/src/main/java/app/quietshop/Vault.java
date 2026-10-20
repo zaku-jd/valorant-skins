@@ -14,6 +14,9 @@ import org.json.JSONObject;
 
 /** App-private encrypted session. Neither secrets nor upstream responses are logged. */
 final class Vault {
+  private static JSONObject memory;
+  private static String memoryBlob = "", memoryIv = "";
+
   private static SecretKey key() throws Exception {
     KeyStore store = KeyStore.getInstance("AndroidKeyStore");
     store.load(null);
@@ -44,23 +47,35 @@ final class Vault {
         .putString("iv", iv)
         .putString("blob", blob)
         .commit()) throw new Exception("Session storage failed.");
+    memory = new JSONObject(value.toString());
+    memoryBlob = blob;
+    memoryIv = iv;
   }
 
   static synchronized JSONObject read(Context c) throws Exception {
     var p = c.getSharedPreferences("vault", 0);
     if (!p.contains("blob")) return new JSONObject();
+    String blob = p.getString("blob", ""), iv = p.getString("iv", "");
+    if (memory != null && blob.equals(memoryBlob) && iv.equals(memoryIv)) return memory;
     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
     cipher.init(
         Cipher.DECRYPT_MODE,
         key(),
         new GCMParameterSpec(128, Base64.decode(p.getString("iv", ""), Base64.NO_WRAP)));
-    return new JSONObject(
-        new String(
-            cipher.doFinal(Base64.decode(p.getString("blob", ""), Base64.NO_WRAP)),
-            StandardCharsets.UTF_8));
+    memory =
+        new JSONObject(
+            new String(
+                cipher.doFinal(Base64.decode(p.getString("blob", ""), Base64.NO_WRAP)),
+                StandardCharsets.UTF_8));
+    memoryBlob = blob;
+    memoryIv = iv;
+    return memory;
   }
 
   static synchronized void clear(Context c) {
+    memory = null;
+    memoryBlob = "";
+    memoryIv = "";
     c.getSharedPreferences("vault", 0).edit().clear().commit();
   }
 }
