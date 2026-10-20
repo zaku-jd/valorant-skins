@@ -77,7 +77,10 @@ public class MainActivity extends AppCompatActivity {
     stars = new HashSet<>(Store.prefs(this).getStringSet("stars", Util.set()));
     condensed = Typeface.createFromAsset(getAssets(), "category-font.ttf");
     Accounts.main(this);
-    String requested = getIntent().getStringExtra("account");
+    String requested =
+        getIntent().getBooleanExtra("widgetMain", false)
+            ? Accounts.main(this)
+            : getIntent().getStringExtra("account");
     if (requested != null)
       try {
         Accounts.select(this, requested);
@@ -369,7 +372,10 @@ public class MainActivity extends AppCompatActivity {
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
     setIntent(intent);
-    String requested = intent.getStringExtra("account");
+    String requested =
+        intent.getBooleanExtra("widgetMain", false)
+            ? Accounts.main(this)
+            : intent.getStringExtra("account");
     if (requested != null)
       try {
         Accounts.select(this, requested);
@@ -739,7 +745,8 @@ public class MainActivity extends AppCompatActivity {
                         : id));
         if (shop.has("AccessoryStore")) {
           ids.add("__accessories");
-          ids.addAll(CosmeticModel.accessories(shop));
+          for (String raw : CosmeticModel.accessories(shop))
+            ids.add(catalogue.aliases.getOrDefault(raw, raw));
         }
       } else
         for (var entry : catalogue.skins.entrySet()) {
@@ -1095,8 +1102,16 @@ public class MainActivity extends AppCompatActivity {
               false));
       body.addView(previews);
     }
-    body.addView(
-        text(s.optString("line") + " · " + catalogue.tier(s) + " · " + priceText(id), 15, MUTED));
+    if (s.optBoolean("accessory")) {
+      body.addView(text(s.optString("kind"), 14, MUTED));
+      if (accessoryCosts(id).length() > 0) {
+        TextView cost = text("", 15, TEXT);
+        applyPrice(cost, id);
+        body.addView(cost);
+      }
+    } else
+      body.addView(
+          text(s.optString("line") + " · " + catalogue.tier(s) + " · " + priceText(id), 15, MUTED));
     LinearLayout variants = new LinearLayout(this);
     JSONArray chromas = s.optJSONArray("chromas");
     if (chromas != null)
@@ -1259,12 +1274,19 @@ public class MainActivity extends AppCompatActivity {
     pager.setCurrentItem(0, true);
   }
 
+  JSONObject accessoryCosts(String id) {
+    for (String raw : CosmeticModel.accessories(shop))
+      if (catalogue.aliases.getOrDefault(raw, raw).equals(id))
+        return CosmeticModel.accessoryCosts(shop, raw);
+    return new JSONObject();
+  }
+
   void applyPrice(TextView view, String id) {
     JSONObject s = catalogue.skins.get(id);
     String currency = Store.VP;
     String value = priceText(id);
     if (s != null && s.optBoolean("accessory")) {
-      JSONObject costs = CosmeticModel.accessoryCosts(shop, id);
+      JSONObject costs = accessoryCosts(id);
       if (costs.length() > 0) {
         currency = costs.keys().next();
         value = String.format(Locale.getDefault(), "%,d", costs.optInt(currency));

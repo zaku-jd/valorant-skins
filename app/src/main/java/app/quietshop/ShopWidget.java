@@ -86,7 +86,11 @@ public class ShopWidget extends AppWidgetProvider {
         PendingIntent.getActivity(
             c,
             0,
-            new Intent(c, MainActivity.class).putExtra("account", Accounts.main(c)),
+            new Intent(c, MainActivity.class)
+                .setAction("app.quietshop.OPEN_MAIN_SHOP")
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra("widgetMain", true)
+                .putExtra("account", Accounts.main(c)),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     for (int i = 0; i < 4; i++) {
       JSONObject s = !expired && i < offers.size() ? cat.skins.get(offers.get(i)) : null;
